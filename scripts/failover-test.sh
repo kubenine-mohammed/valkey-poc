@@ -33,7 +33,7 @@ start_port_forward "$LOCAL_PORT"
 
 probe_loop() {
   local kill_seen=false
-  local deadline=$((SECONDS + 60))
+  local deadline=$((SECONDS + 90))
   while (( SECONDS < deadline )); do
     if [[ -f "$KILL_MARKER" ]]; then
       kill_seen=true
@@ -46,6 +46,8 @@ probe_loop() {
         date +%s > "$RECOVERY_FILE"
         return 0
       fi
+    elif [[ "$kill_seen" == "true" ]]; then
+      restart_port_forward "$LOCAL_PORT"
     fi
     sleep 0.5
   done

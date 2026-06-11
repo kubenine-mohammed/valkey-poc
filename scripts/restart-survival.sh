@@ -43,6 +43,7 @@ log_info "scaling StatefulSet ${VALKEY_NAME} back to ${ORIG_REPLICAS}"
 kubectl scale sts "$VALKEY_NAME" -n "$VALKEY_NAMESPACE" --replicas="$ORIG_REPLICAS"
 
 wait_for_valkey_cluster
+wait_for_cluster_state_ok
 
 POD="$(get_any_valkey_pod)"
 log_info "reading persistence key back via service ${SERVICE_HOST}"

@@ -23,7 +23,7 @@ ensure_tmp_dir() {
 }
 
 log() {
-  printf '[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
+  printf '[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*" >&2
 }
 
 log_info() {
@@ -222,23 +222,8 @@ wait_for_valkey_cluster() {
     "valkeys/${VALKEY_NAME}" -n "$VALKEY_NAMESPACE"
 
   log_info "waiting for ${EXPECTED_REPLICAS} Valkey pods Ready (600s timeout)"
-  local ready_count=0
-  local deadline=$((SECONDS + 600))
-  while (( SECONDS < deadline )); do
-    ready_count="$(kubectl get pods -n "$VALKEY_NAMESPACE" -l "$POD_LABEL_SELECTOR" \
-      --field-selector=status.phase=Running \
-      -o jsonpath='{range .items[?(@.status.conditions[?(@.type=="Ready")].status=="True")]}{.metadata.name}{"\n"}{end}' | wc -l | tr -d ' ')"
-    if [[ "$ready_count" -ge "$EXPECTED_REPLICAS" ]]; then
-      break
-    fi
-    sleep 5
-  done
-
-  if [[ "$ready_count" -lt "$EXPECTED_REPLICAS" ]]; then
-    log_error "expected ${EXPECTED_REPLICAS} ready pods, found ${ready_count}"
-    kubectl get pods -n "$VALKEY_NAMESPACE" -l "$POD_LABEL_SELECTOR" -o wide || true
-    exit 1
-  fi
+  kubectl wait --for=condition=Ready --timeout=600s \
+    pod -l "$POD_LABEL_SELECTOR" -n "$VALKEY_NAMESPACE"
 
   local sts_ready
   sts_ready="$(kubectl get sts "$VALKEY_NAME" -n "$VALKEY_NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)"
@@ -270,7 +255,39 @@ stop_port_forward() {
   if [[ -n "${PORT_FORWARD_PID:-}" ]]; then
     kill "$PORT_FORWARD_PID" 2>/dev/null || true
     wait "$PORT_FORWARD_PID" 2>/dev/null || true
+    unset PORT_FORWARD_PID
   fi
+}
+
+restart_port_forward() {
+  local local_port="${1:-6379}"
+  stop_port_forward
+  start_port_forward "$local_port"
+}
+
+cluster_state_ok() {
+  local pod="$1"
+  local info
+  info="$(valkey_cli_cluster_in_pod "$pod" CLUSTER INFO 2>/dev/null || true)"
+  echo "$info" | grep -q 'cluster_state:ok'
+}
+
+wait_for_cluster_state_ok() {
+  log_info "waiting for cluster_state:ok (600s timeout)"
+  local deadline=$((SECONDS + 600))
+  while (( SECONDS < deadline )); do
+    local pod
+    for pod in $(list_valkey_pods); do
+      if cluster_state_ok "$pod"; then
+        log_info "cluster_state:ok confirmed via pod ${pod}"
+        return 0
+      fi
+    done
+    sleep 5
+  done
+  log_error "cluster did not reach cluster_state:ok within 600s"
+  kubectl get pods -n "$VALKEY_NAMESPACE" -l "$POD_LABEL_SELECTOR" -o wide || true
+  exit 1
 }
 
 emit_doc_row() {
