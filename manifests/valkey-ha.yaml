@@ -1,0 +1,21 @@
+apiVersion: hyperspike.io/v1
+kind: Valkey
+metadata:
+  name: valkey-ha
+  namespace: valkey
+spec:
+  nodes: 1
+  replicas: 2
+  anonymousAuth: false
+  prometheus: false
+  serviceMonitor: false
+  volumePermissions: true
+  clusterDomain: cluster.local
+  storage:
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: civo-volume
+      resources:
+        requests:
+          storage: 1Gi
