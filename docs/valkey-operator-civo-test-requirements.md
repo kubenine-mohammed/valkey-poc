@@ -21,7 +21,8 @@ kubectl wait --for=condition=Ready --timeout=120s pod -l control-plane=controlle
 - **Volume permissions:** `volumePermissions: true` on the Valkey CR avoids permission errors on Civo CSI mounts.
 - **K3s:** No LoadBalancer or Ingress required; all tests use in-cluster ClusterIP services and `kubectl port-forward`.
 - **Admission webhooks:** hyperspike `install.yaml` ships operator TLS/webhook configuration; first install may take ~30s before the controller Deployment becomes Available.
-- **Upstream replica caveat:** [hyperspike/valkey-operator#186](https://github.com/hyperspike/valkey-operator/issues/186) — on some releases all pods may report `role:master` instead of primary+replica. `verify-replication.sh` fails with a `CLUSTER NODES` dump if replication topology is wrong (not a Civo-specific issue).
+- **WSL runner PATH:** non-login shells may omit `/snap/bin`; export `PATH="/snap/bin:$PATH"` before running scripts, or use `bash -lc`.
+- **Failover port-forward:** `kubectl port-forward` to a Service can stick to a deleted primary's endpoint; `failover-test.sh` restarts the forward after pod kill (required for reliable recovery measurement).
 
 ## Cluster Topology
 
@@ -56,24 +57,24 @@ spec:
 
 - **Key written:** `valkey-test:replication` (on current primary pod)
 - **Replicas checked:** all non-primary pods (`kubectl` label selector `app.kubernetes.io/instance=valkey-ha`)
-- **Result:** TBD
+- **Result:** PASS — key read from replicas `valkey-ha-0` and `valkey-ha-2` after `WAIT 2 5000` on primary `valkey-ha-1`
 
 ## Failover Test Results
 
 | Run | Recovery Time (s) | Promoted Replica | Write Success |
 |-----|-------------------|-----------------|---------------|
-| 1   | TBD               | TBD             | TBD           |
+| 1   | 1                 | valkey-ha-1     | yes           |
 
 ## Restart Survival
 
-- **Result:** TBD
-- **Evidence:** TBD (key `valkey-test:persistence` before/after StatefulSet scale 0 → N)
+- **Result:** PASS
+- **Evidence:** key `valkey-test:persistence` matched after StatefulSet scale 0 → 3; `cluster_state:ok` confirmed before read
 
 ## Go / No-Go Assessment
 
-**Decision:** TBD
+**Decision:** GO
 
-**Rationale:** TBD — populated after CI run completes `verify-replication.sh`, `failover-test.sh`, and `restart-survival.sh`.
+**Rationale:** All five scripts passed on Civo K3s (`kubenine-intern-pinniped`): replication verified on both replicas, automatic failover recovered writes in 1 s after primary pod deletion, and persistence survived a full StatefulSet restart.
 
 ## Out of Scope (Follow-up in seperate repo)
 
